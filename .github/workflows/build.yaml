@@ -1,0 +1,71 @@
+name: Bundle SteamOS Dependencies
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    container: 
+      image: archlinux:latest
+      options: --privileged
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure SteamOS Repositories
+        run: |
+          cp /etc/pacman.conf /etc/pacman.conf.bak
+          
+          cat <<EOF > /etc/pacman.conf
+          [options]
+          HoldPkg     = pacman glibc
+          Architecture = auto
+          SigLevel    = Optional TrustAll
+          LocalFileSigLevel = Optional
+
+          [jupiter]
+          Server = https://steamdeck-packages.steamos.cloud/archlinux-mirror/\$repo/os/\$arch
+          
+          [holo]
+          Server = https://steamdeck-packages.steamos.cloud/archlinux-mirror/\$repo/os/\$arch
+
+          [core]
+          Include = /etc/pacman.d/mirrorlist
+
+          [extra]
+          Include = /etc/pacman.d/mirrorlist
+
+          [community]
+          Include = /etc/pacman.d/mirrorlist
+
+          [multilib]
+          Include = /etc/pacman.d/mirrorlist
+          EOF
+
+      - name: Fetch Packages
+        run: |
+          mkdir -p ./packages
+          pacman -Sy --noconfirm
+          
+          pacman -Sw --noconfirm --cachedir ./packages \
+            sed \
+            holo-zram-swap \
+            zram-generator \
+            lib32-vulkan-radeon \
+            vulkan-radeon \
+            gamescope
+          
+          rm -f ./packages/*.db ./packages/*.sig
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: ./packages/*.pkg.tar.zst
+          body: "Offline bundle"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
